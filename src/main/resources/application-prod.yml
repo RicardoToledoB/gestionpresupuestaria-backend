@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: presupuesto-dssm
+
+  # =========================================================
+  # PERFIL FUTURO PRODUCTIVO: POSTGRESQL
+  # Para usarlo: mvn spring-boot:run -Dspring-boot.run.profiles=prod
+  # =========================================================
+  datasource:
+    url: jdbc:postgresql://localhost:5432/presupuesto_dssm
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          time_zone: America/Punta_Arenas
+
+  jackson:
+    time-zone: America/Punta_Arenas
+
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+server:
+  port: ${PORT:8080}
+  servlet:
+    context-path: /api/v1
+
+app:
+  cors:
+    allowed-origin-patterns: ${APP_CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:4200,http://localhost:4300,http://127.0.0.1:4200,https://gestionpresupuestaria-frontend-production.up.railway.app,https://*.up.railway.app,https://*.dssm.cl}
