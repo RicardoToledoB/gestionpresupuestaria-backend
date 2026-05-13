@@ -1,0 +1,168 @@
+package cl.dssm.presupuesto.service;
+
+import cl.dssm.presupuesto.dto.DashboardSummaryDto;
+import cl.dssm.presupuesto.dto.FormalQuadratureDto;
+import cl.dssm.presupuesto.dto.ProgramSummaryDto;
+import com.lowagie.text.Chunk;
+import com.lowagie.text.Document;
+import com.lowagie.text.Font;
+import com.lowagie.text.FontFactory;
+import com.lowagie.text.PageSize;
+import com.lowagie.text.Paragraph;
+import com.lowagie.text.Phrase;
+import com.lowagie.text.pdf.PdfPCell;
+import com.lowagie.text.pdf.PdfPTable;
+import com.lowagie.text.pdf.PdfWriter;
+import lombok.RequiredArgsConstructor;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.stereotype.Service;
+
+import java.io.ByteArrayOutputStream;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+@Service
+@RequiredArgsConstructor
+public class ReportService {
+    private final DashboardService dashboardService;
+    private final FormalQuadratureService quadratureService;
+    private final AuditLogService auditLogService;
+
+    public byte[] executiveExcel() {
+        try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            Sheet sheet = wb.createSheet("Resumen Ejecutivo");
+            int rowIndex = 0;
+            Row title = sheet.createRow(rowIndex++);
+            title.createCell(0).setCellValue("Plataforma de Gestión Presupuestaria DSSM - Reporte Ejecutivo");
+            sheet.createRow(rowIndex++).createCell(0).setCellValue("Generado: " + LocalDateTime.now());
+            rowIndex++;
+            DashboardSummaryDto s = dashboardService.summary();
+            rowIndex = writeMetric(sheet, rowIndex, "Presupuesto vigente", s.totalCurrentBudget());
+            rowIndex = writeMetric(sheet, rowIndex, "CDP emitidos", s.totalCdpIssued());
+            rowIndex = writeMetric(sheet, rowIndex, "Ejecutado por OC", s.totalExecutedByOc());
+            rowIndex = writeMetric(sheet, rowIndex, "Presupuesto disponible", s.totalAvailableBalance());
+            rowIndex = writeMetric(sheet, rowIndex, "Saldo pendiente CDP", s.totalPendingCdpBalance());
+            rowIndex = writeMetric(sheet, rowIndex, "Posible liberación", s.totalPossibleRelease());
+            rowIndex += 2;
+            sheet.createRow(rowIndex++).createCell(0).setCellValue("Resumen presupuestario por programa");
+            Row programHeader = sheet.createRow(rowIndex++);
+            String[] programHeads = {"Programa", "St", "Presupuesto vigente", "Total CDP emitidos", "CDP en saldos", "Presupuesto disponible", "CDP seguimiento", "CDP alerta", "Posible liberar"};
+            for (int i = 0; i < programHeads.length; i++) programHeader.createCell(i).setCellValue(programHeads[i]);
+            for (ProgramSummaryDto p : dashboardService.programs()) {
+                Row r = sheet.createRow(rowIndex++);
+                r.createCell(0).setCellValue(p.programName());
+                r.createCell(1).setCellValue(p.subtitle() == null ? "" : p.subtitle());
+                r.createCell(2).setCellValue(p.currentBudget().doubleValue());
+                r.createCell(3).setCellValue(p.cdpIssued().doubleValue());
+                r.createCell(4).setCellValue(p.cdpPendingBalance().doubleValue());
+                r.createCell(5).setCellValue(p.availableBalance().doubleValue());
+                r.createCell(6).setCellValue(p.cdpFollowUp());
+                r.createCell(7).setCellValue(p.cdpAlert());
+                r.createCell(8).setCellValue(p.possibleRelease().doubleValue());
+            }
+            rowIndex += 2;
+            sheet.createRow(rowIndex++).createCell(0).setCellValue("Cuadratura formal");
+            Row header = sheet.createRow(rowIndex++);
+            header.createCell(0).setCellValue("Indicador");
+            header.createCell(1).setCellValue("Excel");
+            header.createCell(2).setCellValue("Sistema");
+            header.createCell(3).setCellValue("Diferencia");
+            header.createCell(4).setCellValue("Estado");
+            for (FormalQuadratureDto.Row q : quadratureService.quadrature().rows()) {
+                Row r = sheet.createRow(rowIndex++);
+                r.createCell(0).setCellValue(q.indicator());
+                r.createCell(1).setCellValue(q.excelValue().doubleValue());
+                r.createCell(2).setCellValue(q.systemValue().doubleValue());
+                r.createCell(3).setCellValue(q.difference().doubleValue());
+                r.createCell(4).setCellValue(q.status());
+            }
+            for (int i = 0; i < 9; i++) sheet.autoSizeColumn(i);
+            wb.write(out);
+            auditLogService.register("REPORTES", "EXPORT_EXCEL", "ReporteEjecutivo", null, "reporte_ejecutivo.xlsx", null, null, "Exportación de reporte ejecutivo Excel");
+            return out.toByteArray();
+        } catch (Exception ex) {
+            throw new IllegalStateException("No fue posible generar reporte Excel: " + ex.getMessage(), ex);
+        }
+    }
+
+    public byte[] executivePdf() {
+        try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            Document doc = new Document(PageSize.A4.rotate(), 36, 36, 36, 36);
+            PdfWriter.getInstance(doc, out);
+            doc.open();
+            Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 16);
+            Font hFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 11);
+            Font nFont = FontFactory.getFont(FontFactory.HELVETICA, 10);
+            doc.add(new Paragraph("Plataforma de Gestión Presupuestaria DSSM - Reporte Ejecutivo", titleFont));
+            doc.add(new Paragraph("Generado: " + LocalDateTime.now(), nFont));
+            doc.add(Chunk.NEWLINE);
+            DashboardSummaryDto s = dashboardService.summary();
+            PdfPTable t = new PdfPTable(2);
+            t.setWidthPercentage(100);
+            addPdfMetric(t, "Presupuesto vigente", s.totalCurrentBudget(), hFont, nFont);
+            addPdfMetric(t, "CDP emitidos", s.totalCdpIssued(), hFont, nFont);
+            addPdfMetric(t, "Ejecutado por OC", s.totalExecutedByOc(), hFont, nFont);
+            addPdfMetric(t, "Presupuesto disponible", s.totalAvailableBalance(), hFont, nFont);
+            addPdfMetric(t, "Saldo pendiente CDP", s.totalPendingCdpBalance(), hFont, nFont);
+            addPdfMetric(t, "Posible liberación", s.totalPossibleRelease(), hFont, nFont);
+            doc.add(t);
+            doc.add(Chunk.NEWLINE);
+            doc.add(new Paragraph("Resumen presupuestario por programa", hFont));
+            PdfPTable programTable = new PdfPTable(9);
+            programTable.setWidthPercentage(100);
+            programTable.setWidths(new float[]{2.8f, .6f, 1.3f, 1.3f, 1.2f, 1.3f, 1.0f, .9f, 1.2f});
+            for (String head : new String[]{"Programa", "St", "Presupuesto vigente", "Total CDP emitidos", "CDP en saldos", "Presupuesto disponible", "Seguimiento", "Alerta", "Posible liberar"}) {
+                programTable.addCell(new PdfPCell(new Phrase(head, hFont)));
+            }
+            for (ProgramSummaryDto p : dashboardService.programs()) {
+                programTable.addCell(new PdfPCell(new Phrase(p.programName(), nFont)));
+                programTable.addCell(new PdfPCell(new Phrase(p.subtitle() == null ? "" : p.subtitle(), nFont)));
+                programTable.addCell(new PdfPCell(new Phrase(format(p.currentBudget()), nFont)));
+                programTable.addCell(new PdfPCell(new Phrase(format(p.cdpIssued()), nFont)));
+                programTable.addCell(new PdfPCell(new Phrase(format(p.cdpPendingBalance()), nFont)));
+                programTable.addCell(new PdfPCell(new Phrase(format(p.availableBalance()), nFont)));
+                programTable.addCell(new PdfPCell(new Phrase(String.valueOf(p.cdpFollowUp()), nFont)));
+                programTable.addCell(new PdfPCell(new Phrase(String.valueOf(p.cdpAlert()), nFont)));
+                programTable.addCell(new PdfPCell(new Phrase(format(p.possibleRelease()), nFont)));
+            }
+            doc.add(programTable);
+            doc.add(Chunk.NEWLINE);
+            doc.add(new Paragraph("Cuadratura formal Excel vs Sistema", hFont));
+            PdfPTable q = new PdfPTable(5);
+            q.setWidthPercentage(100);
+            for (String head : new String[]{"Indicador", "Excel", "Sistema", "Diferencia", "Estado"}) q.addCell(new PdfPCell(new Phrase(head, hFont)));
+            for (FormalQuadratureDto.Row row : quadratureService.quadrature().rows()) {
+                q.addCell(new PdfPCell(new Phrase(row.indicator(), nFont)));
+                q.addCell(new PdfPCell(new Phrase(format(row.excelValue()), nFont)));
+                q.addCell(new PdfPCell(new Phrase(format(row.systemValue()), nFont)));
+                q.addCell(new PdfPCell(new Phrase(format(row.difference()), nFont)));
+                q.addCell(new PdfPCell(new Phrase(row.status(), nFont)));
+            }
+            doc.add(q);
+            doc.close();
+            auditLogService.register("REPORTES", "EXPORT_PDF", "ReporteEjecutivo", null, "reporte_ejecutivo.pdf", null, null, "Exportación de reporte ejecutivo PDF");
+            return out.toByteArray();
+        } catch (Exception ex) {
+            throw new IllegalStateException("No fue posible generar reporte PDF: " + ex.getMessage(), ex);
+        }
+    }
+
+    private int writeMetric(Sheet sheet, int rowIndex, String label, BigDecimal value) {
+        Row r = sheet.createRow(rowIndex++);
+        r.createCell(0).setCellValue(label);
+        r.createCell(1).setCellValue(value == null ? 0 : value.doubleValue());
+        return rowIndex;
+    }
+
+    private void addPdfMetric(PdfPTable t, String label, BigDecimal value, Font hFont, Font nFont) {
+        t.addCell(new PdfPCell(new Phrase(label, hFont)));
+        t.addCell(new PdfPCell(new Phrase(format(value), nFont)));
+    }
+
+    private String format(BigDecimal value) {
+        return "$" + String.format("%,.0f", value == null ? BigDecimal.ZERO : value).replace(',', '.');
+    }
+}
