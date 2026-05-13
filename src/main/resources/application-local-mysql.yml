@@ -1,0 +1,21 @@
+spring:
+  datasource:
+    url: ${LOCAL_MYSQL_URL:jdbc:mysql://localhost:3306/presupuesto_dssm?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&useUnicode=true&characterEncoding=utf8}
+    username: ${LOCAL_MYSQL_USERNAME:root}
+    password: ${LOCAL_MYSQL_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  h2:
+    console:
+      enabled: false
+
+  jpa:
+    database-platform: org.hibernate.dialect.MySQLDialect
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          time_zone: America/Punta_Arenas
