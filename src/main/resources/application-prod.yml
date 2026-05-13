@@ -1,5 +1,0 @@
-# Alias legacy: si alguien levanta con SPRING_PROFILES_ACTIVE=prod,
-# usa la misma configuración MySQL productiva que production.
-spring:
-  config:
-    import: optional:classpath:application-production.yml
